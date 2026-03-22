@@ -1,0 +1,7 @@
+Create a simple browser to-do list. It should contain the following features:
+
+Allow a user to add a new task
+Allow a user to check or delete a task. When a task is checked, it should be strikethrough
+Allow a user to completely clear the list
+The list can only contain a maximum of 15 tasks. If the user tries adding more tasks, ask the user if they’re sure. If they are, remove the least recently added task. This includes checked tasks as well.
+Make the background easy to the eye.
