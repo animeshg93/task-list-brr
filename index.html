@@ -184,15 +184,94 @@
             color: var(--text-light);
         }
 
+        .task-item.dragging {
+            opacity: 0.5;
+            transform: scale(0.98);
+        }
+
+        .task-item.edit-mode {
+            background: #464f5c;
+        }
+
+        .task-item.edit-mode .task-text {
+            display: none;
+        }
+
+        .task-item.edit-mode .btn-edit {
+            display: none;
+        }
+
+        .task-edit-input {
+            flex: 1;
+            padding: 8px 12px;
+            margin: 0 8px;
+            border: 2px solid var(--accent-warm);
+            border-radius: 8px;
+            background: #2d3436;
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
+            color: var(--text-dark);
+            transition: var(--transition);
+        }
+
+        .task-edit-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(168, 149, 106, 0.2);
+        }
+
+        .btn-save {
+            background: var(--success-color);
+            color: white;
+            padding: 6px 10px;
+            margin: 0 4px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-save:hover {
+            background: #5e9890;
+        }
+
+        .btn-cancel-edit {
+            background: transparent;
+            color: var(--text-light);
+            padding: 6px 10px;
+            margin: 0 4px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-cancel-edit:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .task-item.dragging-over {
+            border-top: 2px solid var(--accent-warm);
+        }
+
         .btn-delete {
             background: transparent;
             color: var(--danger-color);
             padding: 6px 10px;
             margin: 0;
-            font-size: 13px;
+            font-size: 16px;
             border-radius: 6px;
             transition: var(--transition);
             cursor: pointer;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .btn-delete:hover {
@@ -200,6 +279,29 @@
         }
 
         .btn-delete:active {
+            transform: scale(0.95);
+        }
+
+        .btn-edit {
+            background: transparent;
+            color: var(--accent-warm);
+            padding: 6px 10px;
+            margin: 0 4px 0 0;
+            font-size: 16px;
+            border-radius: 6px;
+            transition: var(--transition);
+            cursor: pointer;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-edit:hover {
+            background: rgba(168, 149, 106, 0.1);
+        }
+
+        .btn-edit:active {
             transform: scale(0.95);
         }
 
@@ -474,9 +576,15 @@
             localStorage.setItem('tasks', JSON.stringify(tasks));
         }
 
-        // Render all tasks
+        // Render all tasks (sort completed to bottom)
         function renderTasks() {
             taskList.innerHTML = '';
+
+            // Sort tasks: uncompleted first, then completed
+            const sortedTasks = [
+                ...tasks.filter(t => !t.completed),
+                ...tasks.filter(t => t.completed)
+            ];
 
             if (tasks.length === 0) {
                 emptyState.style.display = 'block';
@@ -485,33 +593,174 @@
                 emptyState.style.display = 'none';
                 clearBtn.disabled = false;
 
-                tasks.forEach((task, index) => {
+                sortedTasks.forEach((task, displayIndex) => {
+                    const actualIndex = tasks.indexOf(task);
                     const taskItem = document.createElement('div');
                     taskItem.className = `task-item ${task.completed ? 'completed' : ''}`;
+                    taskItem.draggable = true;
+                    taskItem.dataset.index = actualIndex;
 
                     taskItem.innerHTML = `
                         <input
                             type="checkbox"
                             class="checkbox"
                             ${task.completed ? 'checked' : ''}
-                            data-index="${index}"
+                            data-index="${actualIndex}"
                         />
                         <span class="task-text">${escapeHtml(task.text)}</span>
-                        <button class="btn-delete" data-index="${index}">Delete</button>
+                        ${task.completed ? '' : `<button class="btn-edit" data-index="${actualIndex}" title="Edit task">✎</button>`}
+                        <button class="btn-delete" data-index="${actualIndex}" title="Delete task">🗑</button>
                     `;
 
                     // Add event listeners
                     const checkbox = taskItem.querySelector('.checkbox');
-                    checkbox.addEventListener('change', () => toggleTask(index));
+                    checkbox.addEventListener('change', () => toggleTaskViaCheckbox(actualIndex));
+
+                    const editBtn = taskItem.querySelector('.btn-edit');
+                    if (editBtn) {
+                        editBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (!task.completed) {
+                                enableEditMode(taskItem, actualIndex);
+                            }
+                        });
+                    }
 
                     const deleteBtn = taskItem.querySelector('.btn-delete');
-                    deleteBtn.addEventListener('click', () => deleteTask(index));
+                    deleteBtn.addEventListener('click', () => deleteTask(actualIndex));
+
+                    // Click anywhere on task (except delete, edit, checkbox, and edit controls) to toggle checked state
+                    taskItem.addEventListener('click', (e) => {
+                        if (!e.target.closest('.btn-delete') && !e.target.closest('.btn-edit') && !e.target.closest('.checkbox') && !e.target.closest('.task-edit-input') && !e.target.closest('.btn-save') && !e.target.closest('.btn-cancel-edit')) {
+                            toggleTask(actualIndex);
+                        }
+                    });
+
+                    // Drag and drop
+                    taskItem.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', actualIndex);
+                        taskItem.classList.add('dragging');
+                    });
+
+                    taskItem.addEventListener('dragend', () => {
+                        taskItem.classList.remove('dragging');
+                        document.querySelectorAll('.task-item').forEach(item => {
+                            item.classList.remove('dragging-over');
+                        });
+                    });
+
+                    taskItem.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (!taskItem.classList.contains('dragging')) {
+                            taskItem.classList.add('dragging-over');
+                        }
+                    });
+
+                    taskItem.addEventListener('dragleave', () => {
+                        taskItem.classList.remove('dragging-over');
+                    });
+
+                    taskItem.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                        const toIndex = actualIndex;
+                        if (fromIndex !== toIndex) {
+                            reorderTasks(fromIndex, toIndex);
+                        }
+                        taskItem.classList.remove('dragging-over');
+                    });
 
                     taskList.appendChild(taskItem);
                 });
             }
 
             updateTaskCounter();
+        }
+
+        // Enable edit mode for a task
+        function enableEditMode(taskItem, index) {
+            const task = tasks[index];
+            const taskText = taskItem.querySelector('.task-text');
+            
+            taskItem.classList.add('edit-mode');
+            
+            const editInput = document.createElement('input');
+            editInput.type = 'text';
+            editInput.className = 'task-edit-input';
+            editInput.value = task.text;
+            editInput.maxLength = 100;
+            
+            const saveBtn = document.createElement('button');
+            saveBtn.className = 'btn-save';
+            saveBtn.textContent = '✓';
+            saveBtn.title = 'Save';
+            
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'btn-cancel-edit';
+            cancelBtn.textContent = '✕';
+            cancelBtn.title = 'Cancel';
+            
+            // Insert edit controls - input first, then icons after
+            const deleteBtn = taskItem.querySelector('.btn-delete');
+            taskItem.insertBefore(editInput, deleteBtn);
+            taskItem.insertBefore(saveBtn, deleteBtn);
+            taskItem.insertBefore(cancelBtn, deleteBtn);
+            
+            editInput.focus();
+            editInput.select();
+            
+            function saveEdit() {
+                const newText = editInput.value.trim();
+                if (newText) {
+                    task.text = newText;
+                    saveTasks();
+                }
+                taskItem.classList.remove('edit-mode');
+                // Update just the task text without re-rendering
+                const taskText = taskItem.querySelector('.task-text');
+                if (taskText) {
+                    taskText.textContent = task.text;
+                }
+                // Recreate edit controls removal
+                editInput.remove();
+                saveBtn.remove();
+                cancelBtn.remove();
+                const editBtn = taskItem.querySelector('.btn-edit');
+                if (editBtn) {
+                    editBtn.style.display = 'flex';
+                }
+            }
+            
+            function cancelEdit() {
+                taskItem.classList.remove('edit-mode');
+                // Just remove edit controls without re-rendering
+                editInput.remove();
+                saveBtn.remove();
+                cancelBtn.remove();
+                const editBtn = taskItem.querySelector('.btn-edit');
+                if (editBtn) {
+                    editBtn.style.display = 'flex';
+                }
+            }
+            
+            saveBtn.addEventListener('click', saveEdit);
+            cancelBtn.addEventListener('click', cancelEdit);
+            editInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') saveEdit();
+            });
+            editInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') cancelEdit();
+            });
+        }
+
+        // Reorder tasks by dragging
+        function reorderTasks(fromIndex, toIndex) {
+            const [movedTask] = tasks.splice(fromIndex, 1);
+            tasks.splice(toIndex, 0, movedTask);
+            saveTasks();
+            renderTasks();
         }
 
         // Update task counter
@@ -580,6 +829,26 @@
             renderTasks();
         }
 
+        // Toggle task via checkbox (prevents full re-render)
+        function toggleTaskViaCheckbox(index) {
+            tasks[index].completed = !tasks[index].completed;
+            saveTasks();
+            
+            // Update just this task item
+            const taskItem = document.querySelector(`[data-index="${index}"]`);
+            if (taskItem) {
+                taskItem.classList.toggle('completed');
+                const editBtn = taskItem.querySelector('.btn-edit');
+                if (editBtn) {
+                    if (tasks[index].completed) {
+                        editBtn.style.display = 'none';
+                    } else {
+                        editBtn.style.display = 'flex';
+                    }
+                }
+            }
+        }
+
         // Delete a specific task
         function deleteTask(index) {
             tasks.splice(index, 1);
@@ -589,7 +858,8 @@
 
         // Clear all tasks
         function clearAllTasks() {
-            if (confirm('Are you sure you want to delete all tasks?')) {
+            const confirmed = confirm('Are you sure you want to delete all tasks?');
+            if (confirmed) {
                 tasks = [];
                 saveTasks();
                 renderTasks();
