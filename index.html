@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://catfacts-gcp-594558169482.europe-west1.run.app; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; font-src 'self' https://fonts.gstatic.com;">
     <title>Mindful To-Do List</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -563,17 +564,92 @@
         let tasks = [];
         let pendingTask = null;
         const MAX_TASKS = 15;
+        let authToken = null; // Store auth token
 
-        // Load tasks from localStorage
-        function loadTasks() {
-            const saved = localStorage.getItem('tasks');
-            tasks = saved ? JSON.parse(saved) : [];
-            renderTasks();
+        // Fetch auth token from the auth API (pre-condition before fetching tasks)
+        async function fetchAuthToken() {
+            try {
+                const response = await fetch('https://catfacts-gcp-594558169482.europe-west1.run.app/auth/token', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Auth API failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                authToken = data.accessToken;
+                console.log('Auth token obtained successfully');
+                return authToken;
+            } catch (error) {
+                console.error('Error fetching auth token:', error);
+                showErrorMessage('Failed to authenticate. Please refresh the page.');
+                return null;
+            }
         }
 
-        // Save tasks to localStorage
+        // Load tasks from REST API (with Bearer token authentication)
+        async function loadTasks() {
+            try {
+                // Step 1: Get auth token first (pre-condition)
+                if (!authToken) {
+                    const token = await fetchAuthToken();
+                    if (!token) {
+                        tasks = [];
+                        renderTasks();
+                        return;
+                    }
+                }
+
+                // Step 2: Fetch tasks using the Bearer token in Authorization header
+                const response = await fetch('https://catfacts-gcp-594558169482.europe-west1.run.app/api/tasks', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Tasks API failed with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Transform API response to task format
+                // API returns array of objects with "task" field, we extract and map it
+                tasks = data.map(item => ({
+                    text: item.task,
+                    completed: false,
+                    addedAt: Date.now()
+                }));
+
+                console.log(`Loaded ${tasks.length} tasks from API`);
+
+                renderTasks();
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+                showErrorMessage('Failed to load tasks. Please try refreshing the page.');
+                tasks = [];
+                renderTasks();
+            }
+        }
+
+        // Save tasks to localStorage (for local persistence of user edits)
         function saveTasks() {
             localStorage.setItem('tasks', JSON.stringify(tasks));
+        }
+
+        // Show error message to user
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #9b7676; color: white; padding: 12px 20px; border-radius: 8px; z-index: 1000; font-size: 14px; font-weight: 500;';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 5000);
         }
 
         // Render all tasks (sort completed to bottom)
